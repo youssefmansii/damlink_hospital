@@ -6,17 +6,30 @@ import { useRealtimeDashboard } from '@/hooks/useRealtimeDashboard';
 import { Activity, Clock, Droplet, Users, AlertCircle } from 'lucide-react';
 import styles from './dashboard-home.module.css';
 import RequestDetailModal from '@/components/RequestDetailModal';
+import { getHospitalContext } from '@/lib/hospitalAuth';
+import { parseDbPoint } from '@/lib/geo';
 
 // Dynamically import Map with SSR disabled
 const Map = dynamic(() => import('@/components/Map'), { ssr: false });
 
 export default function DashboardHome() {
   const [hospitalId, setHospitalId] = useState<string | null>(null);
+  const [hospitalLocation, setHospitalLocation] = useState<[number, number]>([30.0444, 31.2357]);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
 
   useEffect(() => {
-    const id = localStorage.getItem('demo_hospital_id');
-    if (id) setHospitalId(id);
+    let cancelled = false;
+
+    getHospitalContext().then((context) => {
+      if (cancelled) return;
+      setHospitalId(context?.hospital.id ?? null);
+      const position = parseDbPoint(context?.hospital.location);
+      if (position) setHospitalLocation(position);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const { requests, inventory, dispatches, isConnected } = useRealtimeDashboard(hospitalId);
@@ -29,28 +42,25 @@ export default function DashboardHome() {
 
   // Map Markers
   const markers = [
-    ...requests.filter(r => r.location).map(r => {
-      // Parse POINT(lon lat)
-      const match = r.location?.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-      if (match) {
-        return {
-          position: [parseFloat(match[2]), parseFloat(match[1])], // lat, lon
-          type: 'request',
-          label: `Request: ${r.blood_type_needed} - ${r.urgency}`
-        };
-      }
-      return null;
+    ...requests.map(r => {
+      const position = parseDbPoint(r.location);
+      return position
+        ? {
+            position,
+            type: 'request',
+            label: `Request: ${r.blood_type_needed} - ${r.urgency}`
+          }
+        : null;
     }).filter(Boolean),
-    ...dispatches.filter(d => d.donor_profiles?.location).map(d => {
-      const match = d.donor_profiles.location?.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-      if (match) {
-        return {
-          position: [parseFloat(match[2]), parseFloat(match[1])],
-          type: 'donor',
-          label: `Donor: ${d.profiles?.full_name}`
-        };
-      }
-      return null;
+    ...dispatches.map(d => {
+      const position = parseDbPoint(d.donor_profiles?.location);
+      return position
+        ? {
+            position,
+            type: 'donor',
+            label: `Donor: ${d.profiles?.full_name || 'Matched donor'}`
+          }
+        : null;
     }).filter(Boolean)
   ];
 
@@ -101,7 +111,7 @@ export default function DashboardHome() {
             <h3>Live Map Overview</h3>
           </div>
           <div className={styles.mapWrapper}>
-             <Map center={[30.0444, 31.2357]} zoom={12} markers={markers} />
+             <Map center={hospitalLocation} zoom={12} markers={markers} />
           </div>
         </div>
 

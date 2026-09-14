@@ -50,7 +50,7 @@ export default function Map({ center = [30.0444, 31.2357], zoom = 13, markers = 
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Marker position={center} icon={hospitalIcon}>
-          <Popup>City Hospital</Popup>
+          <Popup>Assigned hospital</Popup>
         </Marker>
         <Circle center={center} pathOptions={{ color: '#2563EB', fillColor: '#2563EB', fillOpacity: 0.1 }} radius={2000} />
 

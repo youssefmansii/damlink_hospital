@@ -2,26 +2,40 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, ClipboardList, Droplet, Users, MessageSquare, HelpCircle, Bell, User } from 'lucide-react';
+import { Home, ClipboardList, Droplet, Users, Bell, User } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getHospitalContext, type HospitalContext } from '@/lib/hospitalAuth';
 import styles from './dashboard.module.css';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [hospitalName, setHospitalName] = useState<string | null>(null);
+  const [context, setContext] = useState<HospitalContext | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.push('/login');
-      }
-    });
+    let cancelled = false;
 
-    const name = localStorage.getItem('demo_hospital_name');
-    if (name) setHospitalName(name);
+    const loadContext = async () => {
+      const hospitalContext = await getHospitalContext();
+      if (cancelled) return;
+
+      if (!hospitalContext) {
+        await supabase.auth.signOut();
+        router.replace('/login?error=no_staff');
+        return;
+      }
+
+      setContext(hospitalContext);
+      setLoading(false);
+    };
+
+    loadContext();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const navItems = [
@@ -29,8 +43,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Inventory', icon: Droplet, path: '/dashboard/inventory' },
     { name: 'Requests', icon: ClipboardList, path: '/dashboard/requests' },
     { name: 'Donors', icon: Users, path: '/dashboard/donors' },
-    { name: 'Messages', icon: MessageSquare, path: '/dashboard/messages' },
   ];
+
+  const displayName =
+    (context?.user.user_metadata?.full_name as string | undefined) ||
+    context?.user.email ||
+    'Hospital Staff';
+
+  if (loading) {
+    return <div className={styles.loading}>Loading dashboard...</div>;
+  }
 
   return (
     <div className={styles.layout}>
@@ -40,15 +62,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className={styles.logoText}>Damlink</span>
         </div>
         <div className={styles.headerRight}>
-          <div className={styles.notification}>
+          <div className={styles.notification} aria-label="Notifications">
             <Bell size={20} />
             <span className={styles.badge}>3</span>
           </div>
           <div className={styles.userProfile}>
             <div className={styles.avatar}><User size={16} /></div>
             <div className={styles.userInfo}>
-              <span className={styles.userName}>Arjun Verma</span>
-              <span className={styles.userRole}>{hospitalName || 'City Hospital'}</span>
+              <span className={styles.userName}>{displayName}</span>
+              <span className={styles.userRole}>{context?.hospital.name}</span>
             </div>
           </div>
         </div>
@@ -58,8 +80,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
             {navItems.map(item => (
-              <Link 
-                key={item.name} 
+              <Link
+                key={item.name}
                 href={item.path}
                 className={`${styles.navItem} ${pathname === item.path ? styles.active : ''}`}
               >
@@ -68,13 +90,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             ))}
           </nav>
-          
-          <div className={styles.sidebarFooter}>
-            <Link href="/help" className={styles.navItem}>
-              <HelpCircle size={20} className={styles.icon} />
-              <span className={styles.navText}>Help & Support</span>
-            </Link>
-          </div>
         </aside>
 
         <main className={styles.content}>

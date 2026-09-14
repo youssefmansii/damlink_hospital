@@ -65,18 +65,6 @@
   border-color: var(--primary-blue);
 }
 
-.toggleContainer {
-  font-size: 14px;
-  color: var(--text-dark);
-}
-
-.toggleContainer label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-}
-
 .button {
   background-color: var(--primary-blue);
   color: white;
@@ -95,4 +83,25 @@
 .button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.errorMessage {
+  background-color: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  border-radius: var(--radius-md);
+  color: #B91C1C;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 12px;
+}
+
+.loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-color);
+  color: var(--text-muted);
+  font-weight: 600;
 }

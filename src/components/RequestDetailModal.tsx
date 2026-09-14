@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { MapPin, Clock, FileText, Users, X, AlertTriangle, User } from 'lucide-react';
+import { MapPin, Clock, FileText, Users, X, AlertTriangle, User, MessageSquare } from 'lucide-react';
 import styles from './modal.module.css';
 
 export default function RequestDetailModal({ request, onClose, dispatches }: any) {
@@ -17,31 +17,30 @@ export default function RequestDetailModal({ request, onClose, dispatches }: any
     try {
       if (action === 'accept') {
         newStatus = 'accepted';
-        await supabase
+        const { error } = await supabase
           .from('emergency_requests')
           .update({ status: newStatus })
           .eq('id', request.id);
+        if (error) throw error;
       } 
-      else if (action === 'decline' || action === 'no_blood') {
-        // Trigger the backend Postgres function to route to the next hospital
-        const { data, error } = await supabase.rpc('reassign_hospital', { 
-          p_request_id: request.id 
+      else if (action === 'decline') {
+        const { error } = await supabase
+          .from('emergency_requests')
+          .update({ status: 'declined' })
+          .eq('id', request.id);
+        if (error) throw error;
+      }
+      else if (action === 'no_blood') {
+        const { error } = await supabase
+          .from('emergency_requests')
+          .update({ status: 'donor_matching' })
+          .eq('id', request.id);
+        if (error) throw error;
+
+        const { error: invokeErr } = await supabase.functions.invoke('match-donors', {
+          body: { request_id: request.id }
         });
-        
-        if (error) {
-          console.error("Error reassigning hospital:", error);
-          // Fallback to donor matching if RPC fails
-          await supabase
-            .from('emergency_requests')
-            .update({ status: 'donor_matching' })
-            .eq('id', request.id);
-        } else if (data?.status === 'donor_matching') {
-           // We can optionally trigger the match-donors edge function here
-           const { error: invokeErr } = await supabase.functions.invoke('match-donors', {
-             body: { request_id: request.id }
-           });
-           if (invokeErr) console.error("Error invoking match-donors:", invokeErr);
-        }
+        if (invokeErr) throw invokeErr;
       }
       
       onClose();
@@ -53,8 +52,11 @@ export default function RequestDetailModal({ request, onClose, dispatches }: any
   };
 
   const dispatchToDonor = async (dispatchId: string) => {
-    // Manually override / dispatch
-    await supabase.from('donor_dispatches').update({ status: 'notified' }).eq('id', dispatchId);
+    const { error } = await supabase
+      .from('donor_dispatches')
+      .update({ status: 'notified' })
+      .eq('id', dispatchId);
+    if (error) console.error(error);
   };
 
   const activeDispatches = dispatches.filter((d: any) => d.request_id === request.id);
@@ -157,6 +159,3 @@ export default function RequestDetailModal({ request, onClose, dispatches }: any
     </div>
   );
 }
-
-// Needed to fix the icon error above
-import { MessageSquare } from 'lucide-react';

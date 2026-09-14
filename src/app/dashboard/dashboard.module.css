@@ -160,3 +160,13 @@
   padding: 24px;
   background-color: var(--bg-color);
 }
+
+.loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-color);
+  color: var(--text-muted);
+  font-weight: 600;
+}

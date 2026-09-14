@@ -8,11 +8,15 @@ export function useRealtimeDashboard(hospitalId: string | null) {
   const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
-    if (!hospitalId) return;
+    if (!hospitalId) {
+      setRequests([]);
+      setInventory([]);
+      setDispatches([]);
+      setIsConnected(false);
+      return;
+    }
 
-    // Initial Fetch
     const fetchData = async () => {
-      // 1. Fetch active requests for this hospital
       const { data: reqData } = await supabase
         .from('emergency_requests')
         .select(`
@@ -30,19 +34,17 @@ export function useRealtimeDashboard(hospitalId: string | null) {
         .neq('status', 'expired')
         .order('created_at', { ascending: false });
       
-      if (reqData) setRequests(reqData);
+      const activeRequests = reqData ?? [];
+      setRequests(activeRequests);
 
-      // 2. Fetch inventory
       const { data: invData } = await supabase
         .from('hospital_blood_inventory')
         .select('*')
         .eq('hospital_id', hospitalId);
       
-      if (invData) setInventory(invData);
+      setInventory(invData ?? []);
 
-      // 3. Fetch active dispatches for requests assigned to this hospital
-      // This is slightly complex in a single query from dispatches, so we fetch dispatches where request is active
-      const requestIds = reqData?.map(r => r.id) || [];
+      const requestIds = activeRequests.map(r => r.id);
       if (requestIds.length > 0) {
         const { data: dispData } = await supabase
           .from('donor_dispatches')
@@ -54,7 +56,9 @@ export function useRealtimeDashboard(hospitalId: string | null) {
           .in('request_id', requestIds)
           .neq('status', 'completed')
           .neq('status', 'no_show');
-        if (dispData) setDispatches(dispData);
+        setDispatches(dispData ?? []);
+      } else {
+        setDispatches([]);
       }
     };
 
@@ -65,17 +69,7 @@ export function useRealtimeDashboard(hospitalId: string | null) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'emergency_requests', filter: `assigned_hospital_id=eq.${hospitalId}` },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setRequests(prev => [payload.new, ...prev]);
-            // Notice: payload.new doesn't include joined relations (patients), 
-            // in a full app we'd fetch the patient details for this specific request here.
-          } else if (payload.eventType === 'UPDATE') {
-            setRequests(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
-          } else if (payload.eventType === 'DELETE') {
-            setRequests(prev => prev.filter(r => r.id !== payload.old.id));
-          }
-        }
+        () => fetchData()
       )
       .subscribe((status) => {
         setIsConnected(status === 'SUBSCRIBED');
@@ -102,19 +96,7 @@ export function useRealtimeDashboard(hospitalId: string | null) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'donor_dispatches' },
-        (payload) => {
-          // If we receive a dispatch change, just re-fetch dispatches to ensure joins are correct
-          // In production, we'd only refetch if the request_id is in our list
-          if (payload.new && 'request_id' in payload.new) {
-             setDispatches(prev => {
-                 const newDisp = prev.find(d => d.id === payload.new.id);
-                 if (newDisp) {
-                     return prev.map(d => d.id === payload.new.id ? { ...d, ...payload.new } : d);
-                 }
-                 return prev; // Or trigger fetch
-             });
-          }
-        }
+        () => fetchData()
       )
       .subscribe();
 

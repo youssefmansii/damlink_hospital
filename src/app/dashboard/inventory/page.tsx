@@ -2,48 +2,75 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Droplet, Plus, Minus, Save } from 'lucide-react';
+import { Droplet, Plus, Minus } from 'lucide-react';
+import { getHospitalContext } from '@/lib/hospitalAuth';
 import styles from './inventory.module.css';
 
 export default function InventoryPage() {
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    const id = localStorage.getItem('demo_hospital_id');
-    if (id) {
-      setHospitalId(id);
-      fetchInventory(id);
-    }
+    let cancelled = false;
+
+    const loadInventory = async () => {
+      const context = await getHospitalContext();
+      if (cancelled) return;
+
+      if (!context) {
+        setErrorMessage('This account is not assigned to a hospital.');
+        setLoading(false);
+        return;
+      }
+
+      setHospitalId(context.hospital.id);
+      await fetchInventory(context.hospital.id);
+    };
+
+    loadInventory();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fetchInventory = async (hId: string) => {
     setLoading(true);
-    const { data } = await supabase
+    setErrorMessage('');
+    const { data, error } = await supabase
       .from('hospital_blood_inventory')
       .select('*')
       .eq('hospital_id', hId)
       .order('blood_type');
     
+    if (error) setErrorMessage(error.message);
     if (data) setInventory(data);
     setLoading(false);
   };
 
   const updateUnits = async (bloodType: string, change: number) => {
+    if (!hospitalId) return;
+
     const current = inventory.find(i => i.blood_type === bloodType);
     if (!current) return;
     
     const newUnits = Math.max(0, current.units + change);
+    const previousInventory = inventory;
 
-    // Optimistic UI update
     setInventory(prev => prev.map(i => i.blood_type === bloodType ? { ...i, units: newUnits } : i));
 
-    await supabase
+    const { error } = await supabase
       .from('hospital_blood_inventory')
       .update({ units: newUnits })
       .eq('hospital_id', hospitalId)
       .eq('blood_type', bloodType);
+
+    if (error) {
+      setInventory(previousInventory);
+      setErrorMessage(`Could not update ${bloodType}: ${error.message}`);
+    }
   };
 
   if (loading) return <div>Loading inventory...</div>;
@@ -54,6 +81,12 @@ export default function InventoryPage() {
         <h2><Droplet size={24} /> Blood Inventory Management</h2>
         <p>Real-time stock of blood units for your hospital.</p>
       </div>
+
+      {errorMessage && (
+        <div className={styles.errorMessage} role="alert">
+          {errorMessage}
+        </div>
+      )}
 
       <div className={styles.grid}>
         {inventory.map(inv => (
